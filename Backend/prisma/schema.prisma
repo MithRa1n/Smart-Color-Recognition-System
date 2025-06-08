@@ -1,0 +1,16 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "mysql"
+  url      = env("DATABASE_URL")
+}
+
+model Measurement {
+  id        Int      @id @default(autoincrement())
+  red       Int
+  green     Int
+  blue      Int
+  createdAt DateTime @default(now())
+}
