@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import axios from 'axios'
 import { motion, AnimatePresence } from 'framer-motion'
-import tinycolor from 'tinycolor2'
+import chroma from 'chroma-js'
 
 interface RawColor {
   red: number
@@ -12,108 +12,97 @@ interface RawColor {
 interface ProcessedColor {
   rgb: string
   hex: string
-  name: string
   hsl: {
     h: number
     s: number
     l: number
   }
+  lab: {
+    l: number
+    a: number
+    b: number
+  }
 }
+
 
 export default function ColorBox() {
   const [processedColor, setProcessedColor] = useState<ProcessedColor>({
-    rgb: 'rgb(0, 0, 0)',
+    rgb: '0, 0, 0',
     hex: '#000000',
-    name: 'Чорний',
-    hsl: { h: 0, s: 0, l: 0 }
+    hsl: { h: 0, s: 0, l: 0 },
+    lab: { l: 0, a: 0, b: 0 }
   })
   const [isLoading, setIsLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
+  const [colorHistory, setColorHistory] = useState<RawColor[]>([])
 
-  const baseColors = [
-    { name: 'Червоний', hex: '#FF0000' },
-    { name: 'Зелений', hex: '#00FF00' },
-    { name: 'Синій', hex: '#0000FF' },
-    { name: 'Жовтий', hex: '#FFFF00' },
-    { name: 'Пурпурний', hex: '#FF00FF' },
-    { name: 'Бірюзовий', hex: '#00FFFF' },
-    { name: 'Білий', hex: '#FFFFFF' },
-    { name: 'Чорний', hex: '#000000' },
-    { name: 'Сірий', hex: '#808080' },
-    { name: 'Оранжевий', hex: '#FFA500' },
-    { name: 'Рожевий', hex: '#FFC0CB' },
-    { name: 'Коричневий', hex: '#A52A2A' }
-  ]
-
-  const calculateColorDistance = (color1: tinycolor.Instance, color2: tinycolor.Instance): number => {
-    const rgb1 = color1.toRgb()
-    const rgb2 = color2.toRgb()
+  const calculateAverageColor = (colors: RawColor[]): RawColor => {
+    if (colors.length === 0) return { red: 0, green: 0, blue: 0 }
     
-    return Math.sqrt(
-      Math.pow(rgb1.r - rgb2.r, 2) +
-      Math.pow(rgb1.g - rgb2.g, 2) +
-      Math.pow(rgb1.b - rgb2.b, 2)
-    )
-  }
+    const sum = colors.reduce((acc, color) => ({
+      red: acc.red + color.red,
+      green: acc.green + color.green,
+      blue: acc.blue + color.blue
+    }), { red: 0, green: 0, blue: 0 })
 
-  const findClosestColor = (color: tinycolor.Instance): string => {
-    let minDistance = Number.MAX_VALUE
-    let closestColor = 'Невідомий'
-
-    baseColors.forEach(baseColor => {
-      const baseColorObj = tinycolor(baseColor.hex)
-      const distance = calculateColorDistance(color, baseColorObj)
-      
-      if (distance < minDistance) {
-        minDistance = distance
-        closestColor = baseColor.name
-      }
-    })
-
-    return closestColor
+    return {
+      red: Math.round(sum.red / colors.length),
+      green: Math.round(sum.green / colors.length),
+      blue: Math.round(sum.blue / colors.length)
+    }
   }
 
   const normalizeRGB = (red: number, green: number, blue: number): RawColor => {
-    const normalizedRed = Math.max(0, Math.min(255, red))
-    const normalizedGreen = Math.max(0, Math.min(255, green))
-    const normalizedBlue = Math.max(0, Math.min(255, blue))
+    const calibration = {
+      red: 1.0,
+      green: 1.0,
+      blue: 1.0
+    }
 
-    console.log('Raw RGB values:', { red, green, blue })
-    console.log('Normalized RGB values:', { normalizedRed, normalizedGreen, normalizedBlue })
+    const calibratedRed = Math.max(0, Math.min(255, red * calibration.red))
+    const calibratedGreen = Math.max(0, Math.min(255, green * calibration.green))
+    const calibratedBlue = Math.max(0, Math.min(255, blue * calibration.blue))
 
     return {
-      red: normalizedRed,
-      green: normalizedGreen,
-      blue: normalizedBlue
+      red: Math.round(calibratedRed),
+      green: Math.round(calibratedGreen),
+      blue: Math.round(calibratedBlue)
     }
   }
 
   const processColor = (raw: RawColor): ProcessedColor => {
     try {
-      const normalized = normalizeRGB(raw.red, raw.green, raw.blue)
-      const color = tinycolor({ r: normalized.red, g: normalized.green, b: normalized.blue })
-      const hsl = color.toHsl()
+      const newHistory = [...colorHistory, raw].slice(-5)
+      setColorHistory(newHistory)
+
+      const averageColor = calculateAverageColor(newHistory)
+      const normalized = normalizeRGB(averageColor.red, averageColor.green, averageColor.blue)
       
-      const processed = {
-        rgb: color.toRgbString(),
-        hex: color.toHexString(),
-        name: findClosestColor(color),
+      const color = chroma(normalized.red, normalized.green, normalized.blue)
+      const hsl = color.hsl()
+      const lab = color.lab()
+      
+      return {
+        rgb: color.rgb().join(', '),
+        hex: color.hex(),
         hsl: {
-          h: Math.round(hsl.h),
-          s: Math.round(hsl.s),
-          l: Math.round(hsl.l)
+          h: Math.round(hsl[0]),
+          s: Math.round(hsl[1] * 100),
+          l: Math.round(hsl[2] * 100)
+        },
+        lab: {
+          l: Math.round(lab[0]),
+          a: Math.round(lab[1]),
+          b: Math.round(lab[2])
         }
       }
-
-      console.log('Processed color:', processed)
-      return processed
     } catch (error) {
       console.error('Error processing color:', error)
       return {
-        rgb: 'rgb(0, 0, 0)',
+        rgb: '0, 0, 0',
         hex: '#000000',
-        name: 'Помилка',
-        hsl: { h: 0, s: 0, l: 0 }
+        hsl: { h: 0, s: 0, l: 0 },
+        lab: { l: 0, a: 0, b: 0 }
       }
     }
   }
@@ -127,7 +116,6 @@ export default function ColorBox() {
         const latestMeasurement = res.data[0]
         
         if (latestMeasurement) {
-          console.log('Latest measurement from API:', latestMeasurement)
           const processed = processColor(latestMeasurement)
           setProcessedColor(processed)
         } else {
@@ -142,11 +130,11 @@ export default function ColorBox() {
     }
 
     fetchColor()
-    const interval = setInterval(fetchColor, 3000)
+    const interval = setInterval(fetchColor, 1000)
     return () => clearInterval(interval)
   }, [])
 
-  const textColor = processedColor.hsl.l > 50 ? 'text-gray-900' : 'text-white'
+  const textColor = processedColor.lab.l > 50 ? 'text-gray-900' : 'text-white'
 
   return (
     <div className="space-y-4">
@@ -181,7 +169,7 @@ export default function ColorBox() {
           >
             <motion.div
               className="w-32 h-32 rounded-lg shadow-lg relative overflow-hidden"
-              style={{ backgroundColor: processedColor.rgb }}
+              style={{ backgroundColor: `rgb(${processedColor.rgb})` }}
               whileHover={{ scale: 1.05 }}
               transition={{ type: "spring", stiffness: 300 }}
             >
@@ -190,18 +178,21 @@ export default function ColorBox() {
               </div>
             </motion.div>
             <div className="text-center space-y-2">
-              <p className="text-lg font-medium text-gray-800 dark:text-white">
-                {processedColor.name}
-              </p>
-              <div className="grid grid-cols-2 gap-4">
+              <div className="grid grid-cols-3 gap-4">
                 <div className="text-center">
                   <p className="text-sm text-gray-600 dark:text-gray-300">RGB</p>
-                  <p className="text-sm font-mono">{processedColor.rgb}</p>
+                  <p className="text-sm font-mono">rgb({processedColor.rgb})</p>
                 </div>
                 <div className="text-center">
                   <p className="text-sm text-gray-600 dark:text-gray-300">HSL</p>
                   <p className="text-sm font-mono">
                     H: {processedColor.hsl.h}° S: {processedColor.hsl.s}% L: {processedColor.hsl.l}%
+                  </p>
+                </div>
+                <div className="text-center">
+                  <p className="text-sm text-gray-600 dark:text-gray-300">LAB</p>
+                  <p className="text-sm font-mono">
+                    L: {processedColor.lab.l} a: {processedColor.lab.a} b: {processedColor.lab.b}
                   </p>
                 </div>
               </div>
